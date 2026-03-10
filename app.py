@@ -5,6 +5,10 @@ import pandas as pd
 import plotly.express as px
 import os
 
+
+
+
+    
 # --- data wrangling ---
 DATA_PATH = os.path.join(os.path.dirname(__file__), 'data', 'raw', 'WorldSustainabilityDataset.csv')
 df = pd.read_csv(DATA_PATH)
@@ -21,13 +25,14 @@ col_mapping = {
     'Inflation, consumer prices (annual %) - FP.CPI.TOTL.ZG': 'Inflation',
     'Regime Type (RoW Measure Definition)': 'Regime_Type',
     'World Regions (UN SDG Definition)': 'SDG_Region',
-    'Income Classification (World Bank Definition)': 'Income_Group' # 修正：補回 Income Group
+    'Income Classification (World Bank Definition)': 'Income_Group'
 }
 df.rename(columns=col_mapping, inplace=True)
 
-# 修正：放寬過濾條件，只確保有 Continent 同 Year
+
 df_filtered = df.dropna(subset=['Continent', 'Year']).copy()
 df_filtered['Year'] = pd.to_datetime(df_filtered['Year'], format='%Y')
+df_filtered['Year_num'] = df_filtered['Year'].dt.year
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP], suppress_callback_exceptions=True)
 
@@ -46,7 +51,11 @@ app.index_string = '''
                 box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; 
                 border-top: 5px solid #298c8c !important; 
             }
-            .chart-card { background-color: #ffffff; border-radius: 12px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+            .kpi-card:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 10px 15px rgba(0,0,0,0.1);
+                }
+            .chart-card { background-color: #ffffff; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
             .kpi-title { font-size: 0.7rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
             .kpi-value { font-size: 1.8rem; font-weight: 800; color: #0f172a; margin-bottom: 5px; }
             .kpi-sub { font-size: 0.8rem; color: #64748b; font-weight: 600; }
@@ -60,11 +69,23 @@ app.index_string = '''
 </html>
 '''
 
-def create_kpi_card(id_prefix, title):
+def create_kpi_card(id_prefix, title, tooltip=""):
     return html.Div(className='kpi-card', children=[
-        html.Div(title, className='kpi-title'),
+        html.Div([
+            html.Span(title, className='kpi-title'),
+            html.Span(" ⓘ", id=f"{id_prefix}-info", style={"cursor":"pointer","marginLeft":"5px"})
+        ]),
+        
+        dbc.Tooltip(
+            tooltip,
+            target=f"{id_prefix}-info",
+            placement="top"
+        ),
+
         html.Div(id=f'{id_prefix}-v', className='kpi-value', children='-'),
-        html.Div(id=f'{id_prefix}-s', className='kpi-sub', children='-')
+        html.Div(id=f'{id_prefix}-s', className='kpi-sub', children='-'),
+
+        
     ])
 
 app.layout = html.Div([
@@ -85,21 +106,38 @@ def layout_main():
     return html.Div([
         dbc.Row([
             dbc.Col(md=6, children=[
-                html.Div(className='chart-card p-3 mb-4', style={'border':'1px solid #e2e8f0'}, children=[
+                html.Div(
+                className='chart-card p-3 mb-4',style={'border':'1px solid #e2e8f0','minHeight':'140px'},
+                    children=[
                     dbc.Row([
                         dbc.Col(md=4, children=[html.Div("GROUP", className='kpi-title'), dcc.Dropdown(id='group-dropdown', options=[{'label': k.replace('_',' '), 'value': k} for k in ['Continent','Country','Income_Group','SDG_Region']], value='Continent', clearable=False)]),
                         dbc.Col(md=4, children=[html.Div("SELECTION", className='kpi-title'), dcc.Dropdown(id='entity-dropdown', clearable=False)]),
-                        dbc.Col(md=4, children=[html.Div("YEAR RANGE", className='kpi-title'), dcc.RangeSlider(id='year-slider', min=2000, max=2020, value=[2000, 2018], step=1, marks=None, tooltip={"always_visible": True})])
+                        dbc.Col(md=4, children=[html.Div("YEAR RANGE", className='kpi-title'), dcc.RangeSlider(id='year-slider', min=2000, max=2020, value=[2000, 2018], step=1, marks=None, tooltip={"always_visible": True, "placement": "bottom"})])
                     ])
                 ])
             ]),
-            dbc.Col(md=6, children=[
-                dbc.Row([
-                    dbc.Col(create_kpi_card('kpi-co2', 'CO2 EMISSIONS (M Tonnes)')),
-                    dbc.Col(create_kpi_card('kpi-gdp', 'GDP (USD)')),
-                    dbc.Col(create_kpi_card('kpi-nat', 'NAT RES DEPLETION (%)'))
-                ])
-            ])
+        dbc.Col(md=6, children=[
+            dbc.Row(
+                align="stretch",
+                children=[
+                    dbc.Col(create_kpi_card(
+    'kpi-co2',
+    'CO2 EMISSIONS (M Tonnes)',
+    tooltip="Measures carbon dioxide emissions generated annually. Higher values indicate greater environmental impact."
+), className="h-100"),
+                    dbc.Col(create_kpi_card(
+    'kpi-gdp',
+    'GDP (USD)',
+    tooltip="Gross Domestic Product represents the total monetary value of goods and services produced in the region."
+), className="h-100"),
+                    dbc.Col(create_kpi_card(
+    'kpi-nat',
+    'NAT RES DEPLETION (%)',
+    tooltip="Percentage of natural resource value extracted relative to national income. Higher values suggest unsustainable resource use."
+), className="h-100")
+                ]
+            )
+        ])
         ]),
         dbc.Row([
             dbc.Col(md=6, children=[
@@ -117,14 +155,22 @@ def layout_main():
                     dcc.Graph(id='econ-chart', style={'height': '220px'})
                 ]),
                 html.Div(className='chart-card', children=[
-                    dbc.Row([dbc.Col(html.Div(id='sdg-title', className='fw-bold'), width=7), dbc.Col(dcc.Dropdown(id='sdg-drop', options=[{'label':'Life Exp','value':'Life_Exp'},{'label':'Women Rep','value':'Women_Parliament'}], value='Life_Exp', clearable=False), width=5)]),
+                    dbc.Row([dbc.Col(html.Div(id='sdg-title', className='fw-bold'), width=7), dbc.Col(dcc.Dropdown(id='sdg-drop', options=[{'label':'Life Expectancy','value':'Life_Exp'},{'label':'Women Representation','value':'Women_Parliament'}], value='Life_Exp', clearable=False), width=5)]),
                     dcc.Graph(id='sdg-chart', style={'height': '220px'})
                 ])
             ]),
             dbc.Col(md=2, children=[
-                create_kpi_card('kpi-inf', 'INFLATION (%)'),
+                create_kpi_card(
+                        'kpi-inf',
+                        'INFLATION (%)',
+                        tooltip="Inflation measures the annual percentage increase in the general price level of goods and services. Moderate inflation is normal in growing economies, but high inflation can reduce purchasing power and economic stability."
+                    ),
                 html.Div(className='kpi-card', children=[html.Div("REGIME TYPE", className='kpi-title'), html.Div(id='kpi-reg-v', className='fw-bold', style={'fontSize': '1rem', 'marginTop':'5px'})]),
-                create_kpi_card('kpi-hlt', 'HEALTH (LIFE EXP)')
+                create_kpi_card(
+                    'kpi-hlt',
+                    'HEALTH (LIFE EXP)',
+                    tooltip="Life expectancy indicates the average number of years a newborn is expected to live if current mortality patterns continue. It is a key indicator of overall population health, healthcare access, and living conditions."
+                )
             ])
         ])
     ])
@@ -181,20 +227,40 @@ def update_main(g, e, y, by, ed, sd, clickData, n_clicks, path):
 
     target = clickData['points'][0]['customdata'][0] if clickData else None
     a_df = df_filtered[(df_filtered['Country']==target) & (df_filtered['Year'].dt.year>=y[0]) & (df_filtered['Year'].dt.year<=y[1])] if target else r_df
+
     
-    # --- bubble chart ( ValueError: size property nan) ---
-    b_df = r_df.groupby('Country', as_index=False).mean(numeric_only=True)
-    
-    # filter (Life_Exp) size = NaN
+        ## --- bubble chart ---
+    if g == "Country":
+        # only one country selected -> no grouping
+        b_df = r_df.copy()
+    else:
+        # group view -> aggregate by country
+        b_df = r_df.groupby('Country', as_index=False).mean(numeric_only=True)
+
+    # remove NaNs used by the chart
     b_df_plot = b_df.dropna(subset=['GDP', by, 'Life_Exp'])
     
     if b_df_plot.empty:
         fig_b = px.scatter(title="Insufficient data for bubble chart").update_layout(template='plotly_white')
     else:
+        hover_cols = ['Country']
+        custom_cols = ['Country']
+
+        if g == "Country":
+            hover_cols = {'Year_num': True}
+            custom_cols = ['Country', 'Year_num']
+
         fig_b = px.scatter(
-            b_df_plot, x='GDP', y=by, size='Life_Exp',
-            color_discrete_sequence=['#298c8c'], hover_name='Country', 
-            custom_data=['Country'], log_x=True, template='plotly_white'
+            b_df_plot,
+            x='GDP',
+            y=by,
+            size='Life_Exp',
+            color_discrete_sequence=['#298c8c'],
+            hover_name='Country',
+            hover_data=hover_cols,
+            custom_data=custom_cols,
+            log_x=True,
+            template='plotly_white'
         )
         fig_b.update_traces(marker=dict(sizemode='area', sizeref=2.*max(b_df_plot['Life_Exp'])/(40.**2), line=dict(width=1, color='white')))
         fig_b.update_xaxes(tickformat=".1s", title="GDP (USD, Log Scale)")
@@ -218,7 +284,7 @@ def update_main(g, e, y, by, ed, sd, clickData, n_clicks, path):
             pre = temp[temp['Year']==ys[-2]][col].mean()
             if pre and pre != 0:
                 diff = ((cur-pre)/pre)*100
-                sub = html.Span(f"{diff:+.1f}% vs prev", className="text-success" if diff>=0 else "text-danger")
+                sub = html.Span(f"{diff:+.1f}% vs previous year", className="text-success" if diff>=0 else "text-danger")
         return txt, sub
 
     c2v, c2s = get_kpi('CO2_Emissions'); gdv, gds = get_kpi('GDP', True); ntv, nts = get_kpi('Nat_Res_Depletion')
