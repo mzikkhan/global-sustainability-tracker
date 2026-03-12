@@ -25,7 +25,7 @@ col_mapping = {
 }
 df.rename(columns=col_mapping, inplace=True)
 
-# 修正：放寬過濾條件，只確保有 Continent 同 Year
+#--- preprocess ---
 df_filtered = df.dropna(subset=['Continent', 'Year']).copy()
 df_filtered['Year'] = pd.to_datetime(df_filtered['Year'], format='%Y')
 
