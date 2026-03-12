@@ -196,6 +196,31 @@ def update_comp(s):
            px.line(f, x='Year', y='CO2_Emissions', color='Country', markers=True, template='plotly_white')
 
 @app.callback(
+    [Output("bubble-y-drop", "options"),
+     Output("bubble-y-drop", "value")],
+    Input("group-dropdown", "value")
+)
+def update_bubble_dropdown(group):
+    if group == "Country":
+        options = [
+            {"label": "GDP", "value": "GDP"},
+            {"label": "Life Expectancy", "value": "Life_Exp"},
+            {"label": "Electricity Access", "value": "Elec_Access"},
+            {"label": "CO2 Damage", "value": "CO2_Damage_GNI"},
+            {"label": "Inflation", "value": "Inflation"},
+            {"label": "Natural Resource Depletion", "value": "Nat_Res_Depletion"},
+        ]
+        default_value = "GDP"
+    else:
+        options = [
+            {"label": "CO2 Emissions", "value": "CO2_Emissions"},
+            {"label": "CO2 Damage", "value": "CO2_Damage_GNI"},
+            {"label": "Electricity Access", "value": "Elec_Access"},
+        ]
+        default_value = "CO2_Emissions"
+    return options, default_value
+
+@app.callback(
     [Output('bubble-chart', 'figure'), Output('econ-chart', 'figure'), Output('sdg-chart', 'figure'),
      Output('bubble-title', 'children'), Output('econ-title', 'children'), Output('sdg-title', 'children'),
      Output('kpi-co2-v','children'), Output('kpi-co2-s','children'),
@@ -229,43 +254,81 @@ def update_main(g, e, y, by, ed, sd, clickData, n_clicks, path):
     a_df = df_filtered[(df_filtered['Country']==target) & (df_filtered['Year'].dt.year>=y[0]) & (df_filtered['Year'].dt.year<=y[1])] if target else r_df
 
     
-        ## --- bubble chart ---
+        ## --- bubble OR line chart depending on selection ---
+
     if g == "Country":
-        # only one country selected -> no grouping
-        b_df = r_df.copy()
+        c_df = r_df.dropna(subset=['GDP', 'CO2_Emissions', by]).sort_values("Year")
+
+        if c_df.empty:
+            fig_b = px.scatter(title="Insufficient data").update_layout(template="plotly_white")
+        else:
+            fig_b = px.scatter(
+                c_df,
+                x="Year",
+                y=by,  # <-- dynamically use selected y-axis column here
+                size="CO2_Emissions",
+                color_discrete_sequence=["#298c8c"],
+                hover_data={
+                    "Year": True,
+                    by: ":.2s",  # show formatted values for the selected y-axis
+                    "CO2_Emissions": True
+                },
+                template="plotly_white"
+            )
+            fig_b.update_traces(
+                marker=dict(
+                    sizemode="area",
+                    sizeref=2.*max(c_df["CO2_Emissions"])/(40.**2),
+                    line=dict(width=1, color="white")
+                )
+            )
+            fig_b.update_layout(
+                xaxis_title="Year",
+                yaxis_title=by.replace('_', ' ') + " (USD)" if by == "GDP" else by.replace('_', ' ')
+            )
+
     else:
-        # group view -> aggregate by country
+        # ----- BUBBLE CHART FOR MULTI-COUNTRY VIEW -----
+
+        # aggregate by country
         b_df = r_df.groupby('Country', as_index=False).mean(numeric_only=True)
 
-    # remove NaNs used by the chart
-    b_df_plot = b_df.dropna(subset=['GDP', by, 'Life_Exp'])
-    
-    if b_df_plot.empty:
-        fig_b = px.scatter(title="Insufficient data for bubble chart").update_layout(template='plotly_white')
-    else:
-        hover_cols = ['Country']
-        custom_cols = ['Country']
+        # remove NaNs used by the chart
+        b_df_plot = b_df.dropna(subset=['GDP', by, 'Life_Exp'])
 
-        if g == "Country":
-            hover_cols = {'Year_num': True}
-            custom_cols = ['Country', 'Year_num']
+        if b_df_plot.empty:
+            fig_b = px.scatter(title="Insufficient data for bubble chart").update_layout(template='plotly_white')
 
-        fig_b = px.scatter(
-            b_df_plot,
-            x='GDP',
-            y=by,
-            size='Life_Exp',
-            color_discrete_sequence=['#298c8c'],
-            hover_name='Country',
-            hover_data=hover_cols,
-            custom_data=custom_cols,
-            log_x=True,
-            template='plotly_white'
-        )
-        fig_b.update_traces(marker=dict(sizemode='area', sizeref=2.*max(b_df_plot['Life_Exp'])/(40.**2), line=dict(width=1, color='white')))
-        fig_b.update_xaxes(tickformat=".1s", title="GDP (USD, Log Scale)")
-        fig_b.update_yaxes(type='log' if by != 'Elec_Access' else 'linear', title=by.replace('_', ' '))
+        else:
+            fig_b = px.scatter(
+                b_df_plot,
+                x='GDP',
+                y=by,
+                size='Life_Exp',
+                color_discrete_sequence=['#298c8c'],
+                hover_name='Country',
+                custom_data=['Country'],
+                log_x=True,
+                template='plotly_white'
+            )
 
+            fig_b.update_traces(
+                marker=dict(
+                    sizemode='area',
+                    sizeref=2.*max(b_df_plot['Life_Exp'])/(40.**2),
+                    line=dict(width=1, color='white')
+                )
+            )
+
+            fig_b.update_xaxes(
+                tickformat=".1s",
+                title="GDP (USD, Log Scale)"
+            )
+
+            fig_b.update_yaxes(
+                type='log' if by != 'Elec_Access' else 'linear',
+                title=by.replace('_', ' ')
+            )
     # ---  line chart  ---
     def mk_line(df_in, y_v, col):
         d = df_in.dropna(subset=[y_v]).groupby('Year', as_index=False)[y_v].mean()
