@@ -21,7 +21,7 @@ col_mapping = {
     'Inflation, consumer prices (annual %) - FP.CPI.TOTL.ZG': 'Inflation',
     'Regime Type (RoW Measure Definition)': 'Regime_Type',
     'World Regions (UN SDG Definition)': 'SDG_Region',
-    'Income Classification (World Bank Definition)': 'Income_Group' # 修正：補回 Income Group
+    'Income Classification (World Bank Definition)': 'Income_Group' # 
 }
 df.rename(columns=col_mapping, inplace=True)
 
