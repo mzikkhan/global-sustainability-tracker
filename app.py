@@ -21,11 +21,11 @@ col_mapping = {
     'Inflation, consumer prices (annual %) - FP.CPI.TOTL.ZG': 'Inflation',
     'Regime Type (RoW Measure Definition)': 'Regime_Type',
     'World Regions (UN SDG Definition)': 'SDG_Region',
-    'Income Classification (World Bank Definition)': 'Income_Group' # 修正：補回 Income Group
+    'Income Classification (World Bank Definition)': 'Income_Group' # 
 }
 df.rename(columns=col_mapping, inplace=True)
 
-# 修正：放寬過濾條件，只確保有 Continent 同 Year
+#--- preprocess ---
 df_filtered = df.dropna(subset=['Continent', 'Year']).copy()
 df_filtered['Year'] = pd.to_datetime(df_filtered['Year'], format='%Y')
 
