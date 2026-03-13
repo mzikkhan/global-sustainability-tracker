@@ -240,10 +240,19 @@ def layout_main():
             dbc.Col(md=6, children=[
                 html.Div(className='chart-card', children=[
                     dbc.Row(align="center", children=[
-                        dbc.Col(html.Div([html.Span(id='bubble-title', className='fw-bold', style={'fontSize':'1.1rem'}), dbc.Button("Reset", id="reset-btn", color="outline-secondary", size="sm", className="ms-2")]), width=6),
-                        dbc.Col(dcc.Dropdown(id='bubble-y-drop', options=[{'label': 'CO2 Emissions', 'value': 'CO2_Emissions'}, {'label': 'CO2 Damage', 'value': 'CO2_Damage_GNI'}, {'label': 'Electricity Access', 'value': 'Elec_Access'}], value='CO2_Emissions', clearable=False), width=6)
+                        dbc.Col(html.Div("Environment Factors", className='chart-title'), width=7),
+                        dbc.Col(dcc.Dropdown(
+                            id='env-metric-dropdown',
+                            options=[
+                                {'label': 'CO2 Emissions', 'value': 'CO2_Emissions'},
+                                {'label': 'CO2 Damage (% GNI)', 'value': 'CO2_Damage_GNI'},
+                                {'label': 'Electricity Access', 'value': 'Elec_Access'}
+                            ],
+                            value='CO2_Emissions',
+                            clearable=False
+                        ), width=5)
                     ]),
-                    dcc.Graph(id='bubble-chart', style={'height': '500px', 'marginTop': '20px'})
+                    dcc.Graph(id='env-chart', style={'height': '500px', 'marginTop': '20px'})
                 ])
             ]),
             dbc.Col(md=4, children=[
@@ -342,77 +351,40 @@ def update_comp(c1, c2, kpi):
     fig.update_layout(yaxis_title=LABEL_MAP.get(kpi))
     return fig, f"{LABEL_MAP.get(kpi)}: {c1} vs {c2}"
 
-@app.callback(
-    [Output("bubble-y-drop", "options"),
-     Output("bubble-y-drop", "value")],
-    Input("group-dropdown", "value")
-)
-def update_bubble_dropdown(group):
-    """
-    Dynamically updates the available options for the bubble chart's Y-axis dropdown 
-    based on the currently selected grouping level (e.g., 'Country' vs 'Continent').
 
-    Args:
-        group (str): The selected grouping column.
-
-    Returns:
-        tuple (list, str): 
-            - A list of dictionary options representing valid Y-axis metrics.
-            - The default selected metric based on the group type.
-    """
-    if group == "Country":
-        options = [
-            {"label": "GDP", "value": "GDP"},
-            {"label": "Life Expectancy", "value": "Life_Exp"},
-            {"label": "Electricity Access", "value": "Elec_Access"},
-            {"label": "CO2 Damage", "value": "CO2_Damage_GNI"},
-            {"label": "Inflation", "value": "Inflation"},
-            {"label": "Natural Resource Depletion", "value": "Nat_Res_Depletion"},
-        ]
-        default_value = "GDP"
-    else:
-        options = [
-            {"label": "CO2 Emissions", "value": "CO2_Emissions"},
-            {"label": "CO2 Damage", "value": "CO2_Damage_GNI"},
-            {"label": "Electricity Access", "value": "Elec_Access"},
-        ]
-        default_value = "CO2_Emissions"
-    return options, default_value
 
 @app.callback(
-    [Output('bubble-chart', 'figure'), Output('econ-chart', 'figure'), Output('sdg-chart', 'figure'),
-     Output('bubble-title', 'children'), Output('econ-title', 'children'), Output('sdg-title', 'children'),
+    [Output('env-chart', 'figure'), Output('econ-chart', 'figure'), Output('sdg-chart', 'figure'),
+     Output('econ-title', 'children'), Output('sdg-title', 'children'),
      Output('kpi-co2-v','children'), Output('kpi-co2-s','children'),
      Output('kpi-gdp-v','children'), Output('kpi-gdp-s','children'),
      Output('kpi-nat-v','children'), Output('kpi-nat-s','children'),
      Output('kpi-inf-v','children'), Output('kpi-inf-s','children'),
      Output('kpi-hlt-v','children'), Output('kpi-hlt-s','children'),
-     Output('kpi-reg-v','children'), Output('bubble-chart', 'clickData'),
+     Output('kpi-reg-v','children'),
      Output('entity-dropdown', 'options'), Output('entity-dropdown', 'value')],
     [Input('group-dropdown','value'), Input('entity-dropdown','value'), Input('year-slider','value'),
-     Input('bubble-y-drop','value'), Input('econ-drop','value'), Input('sdg-drop','value'),
-     Input('bubble-chart', 'clickData'), Input('reset-btn', 'n_clicks'), Input('url', 'pathname')]
+     Input('env-metric-dropdown','value'), Input('econ-drop','value'), Input('sdg-drop','value'),
+     Input('url', 'pathname')]
 )
-def update_main(g, e, y, by, ed, sd, clickData, n_clicks, path):
+def update_main(g, e, y, env_metric, ed, sd, path):
     """
     Main dashboard callback. Updates all charts, KPIs, and related titles based on user interactions 
-    with the filters, slider, and the bubble chart itself (cross-filtering).
+    with the filters and slider.
 
     Args:
         g (str): Group-level selection (e.g., 'Continent', 'Country').
         e (str): Specific entity selection within the group (e.g., 'Asia', 'Canada').
         y (list[int]): Two-element list representing the [start, end] years from the range slider.
-        by (str): Selected Y-axis metric for the bubble chart.
+        env_metric (str): Selected Y-axis metric for the environment line chart.
         ed (str): Selected Y-axis metric for the economic line chart.
         sd (str): Selected Y-axis metric for the social progress line chart.
-        clickData (dict | None): Data payload from cliking a point on the bubble chart. Used for drill-down.
-        n_clicks (int | None): Number of times the "Reset" button has been clicked.
         path (str): Current URL path to prevent execution on non-main pages.
 
     Returns:
-        tuple: A massive 20-element tuple containing updated dash component properties (figures, text strings, dropdown states).
+        tuple: A tuple containing updated dash component properties (figures, text strings, dropdown states).
     """
-    if path != '/': return [dash.no_update]*20
+    if path != '/': return [dash.no_update]*18
     ctx = dash.callback_context
     trig = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
     
@@ -420,92 +392,10 @@ def update_main(g, e, y, by, ed, sd, clickData, n_clicks, path):
     e_opts = [{'label': country_label_with_flag(i) if g == 'Country' else i, 'value': i} for i in opt_vals]
     e_val = e if e in opt_vals else opt_vals[0]
     
-    if trig == 'reset-btn': clickData = None
-    
     r_df = df_filtered[(df_filtered[g]==e_val) & (df_filtered['Year'].dt.year>=y[0]) & (df_filtered['Year'].dt.year<=y[1])]
     
     if r_df.empty:
-        return [px.scatter(title="No Data").update_layout(template='plotly_white')]*3 + ["-"]*14 + [None, e_opts, e_val]
-
-    target = clickData['points'][0]['customdata'][0] if clickData else None
-    a_df = df_filtered[(df_filtered['Country']==target) & (df_filtered['Year'].dt.year>=y[0]) & (df_filtered['Year'].dt.year<=y[1])] if target else r_df
-
-    
-        ## --- bubble OR line chart depending on selection ---
-
-    if g == "Country":
-        c_df = r_df.dropna(subset=['GDP', 'CO2_Emissions', by]).sort_values("Year")
-
-        if c_df.empty:
-            fig_b = px.scatter(title="Insufficient data").update_layout(template="plotly_white")
-        else:
-            fig_b = px.scatter(
-                c_df,
-                x="Year",
-                y=by,  # <-- dynamically use selected y-axis column here
-                size="CO2_Emissions",
-                color_discrete_sequence=["#298c8c"],
-                hover_data={
-                    "Year": True,
-                    by: ":.2s",  # show formatted values for the selected y-axis
-                    "CO2_Emissions": True
-                },
-                template="plotly_white"
-            )
-            fig_b.update_traces(
-                marker=dict(
-                    sizemode="area",
-                    sizeref=2.*max(c_df["CO2_Emissions"])/(40.**2),
-                    line=dict(width=1, color="white")
-                )
-            )
-            fig_b.update_layout(
-                xaxis_title="Year",
-                yaxis_title=by.replace('_', ' ') + " (USD)" if by == "GDP" else by.replace('_', ' ')
-            )
-
-    else:
-        # ----- BUBBLE CHART FOR MULTI-COUNTRY VIEW -----
-
-        # aggregate by country
-        b_df = r_df.groupby('Country', as_index=False).mean(numeric_only=True)
-
-        # remove NaNs used by the chart
-        b_df_plot = b_df.dropna(subset=['GDP', by, 'Life_Exp'])
-
-        if b_df_plot.empty:
-            fig_b = px.scatter(title="Insufficient data for bubble chart").update_layout(template='plotly_white')
-
-        else:
-            fig_b = px.scatter(
-                b_df_plot,
-                x='GDP',
-                y=by,
-                size='Life_Exp',
-                color_discrete_sequence=['#298c8c'],
-                hover_name='Country',
-                custom_data=['Country'],
-                log_x=True,
-                template='plotly_white'
-            )
-
-            fig_b.update_traces(
-                marker=dict(
-                    sizemode='area',
-                    sizeref=2.*max(b_df_plot['Life_Exp'])/(40.**2),
-                    line=dict(width=1, color='white')
-                )
-            )
-
-            fig_b.update_xaxes(
-                tickformat=".1s",
-                title="GDP (USD, Log Scale)"
-            )
-
-            fig_b.update_yaxes(
-                type='log' if by != 'Elec_Access' else 'linear',
-                title=by.replace('_', ' ')
-            )
+        return [px.line().update_layout(template='plotly_white')]*3 + ["-"]*13 + [e_opts, e_val]
     # ---  line chart  ---
     def mk_line(df_in, y_v, col, y_label=None):
         """
@@ -541,12 +431,12 @@ def update_main(g, e, y, by, ed, sd, clickData, n_clicks, path):
         Returns:
             tuple (str, dash.html.Span | str): The formatted current value, and a styled HTML span showing the % change or context.
         """
-        temp = a_df.dropna(subset=[col])
+        temp = r_df.dropna(subset=[col])
         if temp.empty: return "-", "No data"
         ys = sorted(temp['Year'].unique())
         cur = temp[temp['Year']==ys[-1]][col].mean()
         txt = f"${cur/1e12:.1f}T" if is_m and cur>=1e12 else (f"${cur/1e9:.2f}B" if is_m else f"{cur:.1f}")
-        sub = "Selected" if target else "Avg"
+        sub = "Avg"
         if len(ys)>1:
             pre = temp[temp['Year']==ys[-2]][col].mean()
             if pre and pre != 0:
@@ -562,13 +452,13 @@ def update_main(g, e, y, by, ed, sd, clickData, n_clicks, path):
     htv, hts = get_kpi('Life_Exp')
     
     # Regime Type 
-    reg_df = a_df.dropna(subset=['Regime_Type'])
+    reg_df = r_df.dropna(subset=['Regime_Type'])
     reg = reg_df.sort_values('Year')['Regime_Type'].iloc[-1] if not reg_df.empty else "-"
 
-    return fig_b, mk_line(a_df, ed, '#f1a226', LABEL_MAP.get(ed)), mk_line(a_df, sd, '#f1a226', LABEL_MAP.get(sd)), \
-           f"REGIONAL OVERVIEW" if not target else f"FOCUS: {target}", \
+    return mk_line(r_df, env_metric, '#298c8c', LABEL_MAP.get(env_metric, env_metric.replace('_', ' '))), \
+           mk_line(r_df, ed, '#f1a226', LABEL_MAP.get(ed)), mk_line(r_df, sd, '#f1a226', LABEL_MAP.get(sd)), \
            f"Economic Trackers", f"Social Progress", \
-           c2v, c2s, gdv, gds, ntv, nts, ifv, ifs, htv, hts, reg, clickData if trig != 'reset-btn' else None, e_opts, e_val
+           c2v, c2s, gdv, gds, ntv, nts, ifv, ifs, htv, hts, reg, e_opts, e_val
 
 if __name__ == '__main__':
     app.run(debug=True, port=8050)
