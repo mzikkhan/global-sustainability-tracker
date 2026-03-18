@@ -365,7 +365,8 @@ def update_comp(c1, c2, kpi):
      Output('entity-dropdown', 'options'), Output('entity-dropdown', 'value')],
     [Input('group-dropdown','value'), Input('entity-dropdown','value'), Input('year-slider','value'),
      Input('env-metric-dropdown','value'), Input('econ-drop','value'), Input('sdg-drop','value'),
-     Input('url', 'pathname')]
+     Input('url', 'pathname')
+     ]
 )
 def update_main(g, e, y, env_metric, ed, sd, path):
     """
@@ -385,9 +386,6 @@ def update_main(g, e, y, env_metric, ed, sd, path):
         tuple: A tuple containing updated dash component properties (figures, text strings, dropdown states).
     """
     if path != '/': return [dash.no_update]*18
-    ctx = dash.callback_context
-    trig = ctx.triggered[0]['prop_id'].split('.')[0] if ctx.triggered else None
-    
     opt_vals = sorted(df_filtered[g].dropna().unique())
     e_opts = [{'label': country_label_with_flag(i) if g == 'Country' else i, 'value': i} for i in opt_vals]
     e_val = e if e in opt_vals else opt_vals[0]
@@ -454,11 +452,60 @@ def update_main(g, e, y, env_metric, ed, sd, path):
     # Regime Type 
     reg_df = r_df.dropna(subset=['Regime_Type'])
     reg = reg_df.sort_values('Year')['Regime_Type'].iloc[-1] if not reg_df.empty else "-"
+    
+    
+    env_fig = mk_line(r_df, env_metric, '#298c8c', LABEL_MAP.get(env_metric, env_metric.replace('_', ' ')))
+    econ_fig = mk_line(r_df, ed, '#f1a226', LABEL_MAP.get(ed))
+    sdg_fig = mk_line(r_df, sd, '#f1a226', LABEL_MAP.get(sd))
+    
+    
+    uirev = f"{y[0]}-{y[1]}"
 
-    return mk_line(r_df, env_metric, '#298c8c', LABEL_MAP.get(env_metric, env_metric.replace('_', ' '))), \
-           mk_line(r_df, ed, '#f1a226', LABEL_MAP.get(ed)), mk_line(r_df, sd, '#f1a226', LABEL_MAP.get(sd)), \
-           f"Economic Trackers", f"Social Progress", \
-           c2v, c2s, gdv, gds, ntv, nts, ifv, ifs, htv, hts, reg, e_opts, e_val
+    env_fig.update_layout(uirevision=uirev)
+    econ_fig.update_layout(uirevision=uirev)
+    sdg_fig.update_layout(uirevision=uirev)
 
+    return env_fig, econ_fig, sdg_fig, \
+        f"Economic Trackers", f"Social Progress", \
+        c2v, c2s, gdv, gds, ntv, nts, ifv, ifs, htv, hts, reg, e_opts, e_val
+# --- Zoom and slider sync ---
+@app.callback(
+    Output('year-slider', 'value'),
+    [Input('env-chart', 'relayoutData'),
+     Input('econ-chart', 'relayoutData'),
+     Input('sdg-chart', 'relayoutData')],
+    State('year-slider', 'value'),
+    prevent_initial_call=True
+)
+def sync_slider_with_zoom(env_relayout, econ_relayout, sdg_relayout, current_range):
+    ctx = callback_context
+    if not ctx.triggered:
+        return current_range
+
+    trig = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    relayout = {
+        'env-chart': env_relayout,
+        'econ-chart': econ_relayout,
+        'sdg-chart': sdg_relayout
+    }.get(trig)
+
+    if not relayout:
+        return current_range
+
+    # Reset zoom (double-click)
+    if 'xaxis.autorange' in relayout:
+        return [2000, 2020]
+
+    # Zoom range selected
+    if 'xaxis.range[0]' in relayout and 'xaxis.range[1]' in relayout:
+        try:
+            start = int(pd.to_datetime(relayout['xaxis.range[0]']).year)
+            end = int(pd.to_datetime(relayout['xaxis.range[1]']).year)
+            return [start, end]
+        except Exception:
+            return current_range
+
+    return current_range
 if __name__ == '__main__':
     app.run(debug=True, port=8050)
